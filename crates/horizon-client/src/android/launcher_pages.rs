@@ -5922,7 +5922,7 @@ impl Launcher {
                 ui.set_clip(None);
             }
             SettingsCategory::Controls => {
-                let studio_offset = 196.0;
+                let studio_offset = 122.0; // Reduced after removing MCPE/GoyControl mode selector cards
                 let count = 26;
                 let max_scroll =
                     (studio_offset + count as f32 * step_y - (list_bottom - list_top)).max(0.0);
@@ -5930,7 +5930,6 @@ impl Launcher {
                 self.list_view = Some([list_top, list_bottom, max_scroll]);
 
                 let style = touch_cfg.control_style;
-                let is_mcpe = style == horizon_client::touch::ControlStyle::Mcpe;
                 let is_goy = style == horizon_client::touch::ControlStyle::GoyControl;
                 let sys_name = style.label();
                 let sys_presets = horizon_client::touch::Settings::list_presets(&game_home, style);
@@ -6011,7 +6010,7 @@ impl Launcher {
                 let rows: [(&str, &str, SettingControl<'_>); 26] = [
                     (
                         "LAYOUT STUDIO, IMPORT & EXPORT PRESETS",
-                        "Material 3 HUD editor, automatic MCPE/GoyControl file importer & location picker export",
+                        "DroidBridge Controls Editor with full key pickers, macros & full-size keyboard",
                         SettingControl::SectionHeader(sys_name, Icon::MenuEquals),
                     ),
                     (
@@ -6207,125 +6206,8 @@ impl Launcher {
                     (list_bottom - list_top).max(1.0),
                 ]));
 
-                // M3 Expressive Control Engine Hero Selector Cards
-                let picker_y = list_top - self.catalog.scroll;
-                if picker_y + 66.0 >= list_top && picker_y <= list_bottom {
-                    let half_w = (content_w - 10.0) * 0.5;
-                    for (i, (title, sub, badge, selected, action)) in [
-                        (
-                            "MCPE (Default)",
-                            "Vanilla touch sprites, D-Pad & thumbstick",
-                            "CLASSIC HUD",
-                            is_mcpe,
-                            Action::SelectControlMode(horizon_client::touch::ControlStyle::Mcpe),
-                        ),
-                        (
-                            "GoyControl",
-                            "Custom multi-bind HUD, macros & pass-through",
-                            "PRO OVERLAY",
-                            is_goy,
-                            Action::SelectControlMode(
-                                horizon_client::touch::ControlStyle::GoyControl,
-                            ),
-                        ),
-                    ]
-                    .into_iter()
-                    .enumerate()
-                    {
-                        let rx = content_x + i as f32 * (half_w + 10.0);
-                        let rect = [rx, picker_y, half_w, 66.0];
-                        if let Some(c) = ui.clip_rect(rect) {
-                            self.targets.push((c, action));
-                        }
-                        self.list_targets.push((rect, action));
-                        ui.rounded(
-                            rx,
-                            picker_y,
-                            half_w,
-                            66.0,
-                            18.0,
-                            if selected {
-                                my3_surface()
-                            } else {
-                                my3_card_bg()
-                            },
-                        );
-                        ui.border(
-                            rx,
-                            picker_y,
-                            half_w,
-                            66.0,
-                            18.0,
-                            if selected {
-                                my3_accent()
-                            } else {
-                                my3_card_border()
-                            },
-                        );
-                        if selected {
-                            ui.rounded(rx + 4.0, picker_y + 12.0, 4.0, 42.0, 2.0, my3_accent());
-                        }
-                        let rad_x = rx + 16.0;
-                        let rad_y = picker_y + 23.0;
-                        ui.stroke_rounded(
-                            rad_x,
-                            rad_y,
-                            20.0,
-                            20.0,
-                            10.0,
-                            1.8,
-                            if selected { my3_accent() } else { my3_muted() },
-                        );
-                        if selected {
-                            ui.rounded(rad_x + 5.0, rad_y + 5.0, 10.0, 10.0, 5.0, my3_accent());
-                        }
-                        let chip_w = 78.0;
-                        let chip_x = rx + half_w - chip_w - 10.0;
-                        ui.rounded(
-                            chip_x,
-                            picker_y + 10.0,
-                            chip_w,
-                            20.0,
-                            10.0,
-                            if selected {
-                                my3_accent_soft()
-                            } else {
-                                my3_surface_high()
-                            },
-                        );
-                        ui.centered_fit(
-                            Face::SemiBold,
-                            8.5,
-                            [chip_x + 4.0, picker_y + 10.0, chip_w - 8.0, 20.0],
-                            if selected { my3_accent() } else { my3_muted() },
-                            if selected { "ACTIVE" } else { badge },
-                        );
-                        let text_x = rx + 44.0;
-                        let max_w = (half_w - 134.0).max(56.0);
-                        let fitted = ui.fit_text(Face::SemiBold, 14.5, title, max_w);
-                        ui.text(
-                            Face::SemiBold,
-                            14.5,
-                            text_x,
-                            picker_y + 11.0,
-                            my3_text(),
-                            &fitted,
-                        );
-                        let sub_max_w = (half_w - 54.0).max(60.0);
-                        let fitted_sub = ui.fit_text(Face::Regular, 11.5, sub, sub_max_w);
-                        ui.text(
-                            Face::Regular,
-                            11.5,
-                            text_x,
-                            picker_y + 36.0,
-                            my3_muted(),
-                            &fitted_sub,
-                        );
-                    }
-                }
-
                 // Material Design 3 Control Studio Workbench Card (Two-tier: Full-width Header + 3-Button Action Bar)
-                let wb_y = list_top + 74.0 - self.catalog.scroll;
+                let wb_y = list_top - self.catalog.scroll;
                 let wb_h = 114.0;
                 if wb_y + wb_h >= list_top && wb_y <= list_bottom {
                     ui.rounded(content_x, wb_y, content_w, wb_h, 20.0, my3_surface());
@@ -6960,13 +6842,20 @@ impl Launcher {
                 );
             }
             Some(Action::OpenControlEditor) => {
-                let game_home = self.catalog.config.game_home(&self.home);
-                let mut tc = horizon_client::touch::TouchControls::default();
-                tc.settings = horizon_client::touch::Settings::load_from(
-                    &game_home.join("horizon-touch.json"),
-                );
-                tc.open_editor();
-                self.control_editor = Some(tc);
+                // Prefer DroidBridge's full ControlsEditorActivity (key pickers + full-size keyboard).
+                // Fall back to Horizon's built-in GoyControl editor when not running under DroidBridge.
+                if crate::platform::open_droidbridge_controls_editor() {
+                    self.catalog.status =
+                        "Opened DroidBridge Controls Editor (full keyboard & key pickers).".into();
+                } else {
+                    let game_home = self.catalog.config.game_home(&self.home);
+                    let mut tc = horizon_client::touch::TouchControls::default();
+                    tc.settings = horizon_client::touch::Settings::load_from(
+                        &game_home.join("horizon-touch.json"),
+                    );
+                    tc.open_editor();
+                    self.control_editor = Some(tc);
+                }
             }
             Some(Action::CloseControlEditor) => {
                 if let Some(mut tc) = self.control_editor.take() {
