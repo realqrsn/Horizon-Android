@@ -373,11 +373,27 @@ pub fn open_url(url: &str) -> bool {
 }
 
 /// Launch DroidBridge's full ControlsEditorActivity (key pickers + full-size keyboard).
+/// Uses the exported action so it works cross-package from Horizon.
 /// Returns true if the Intent was successfully started.
 pub fn open_droidbridge_controls_editor() -> bool {
     with_context(|env, activity| {
-        let intent = env.new_object("android/content/Intent", "()V", &[])?;
+        // Prefer action-based Intent (works when activity is exported with intent-filter).
+        let action = JObject::from(env.new_string(
+            "ca.dnamobile.droidbridgelauncher.action.OPEN_CONTROLS_EDITOR",
+        )?);
+        let intent = env.new_object(
+            "android/content/Intent",
+            "(Ljava/lang/String;)V",
+            &[JValue::Object(&action)],
+        )?;
         let pkg = JObject::from(env.new_string("ca.dnamobile.droidbridgelauncher")?);
+        env.call_method(
+            &intent,
+            "setPackage",
+            "(Ljava/lang/String;)Landroid/content/Intent;",
+            &[JValue::Object(&pkg)],
+        )?;
+        // Also set explicit component as fallback when package is installed.
         let cls = JObject::from(env.new_string(
             "ca.dnamobile.droidbridgelauncher.controls.ControlsEditorActivity",
         )?);

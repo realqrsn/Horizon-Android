@@ -6842,19 +6842,14 @@ impl Launcher {
                 );
             }
             Some(Action::OpenControlEditor) => {
-                // Prefer DroidBridge's full ControlsEditorActivity (key pickers + full-size keyboard).
-                // Fall back to Horizon's built-in GoyControl editor when not running under DroidBridge.
+                // Always open DroidBridge's ControlsEditorActivity (full keyboard, key pickers,
+                // multi-slot bindings). Do not open Horizon's built-in GoyControl editor.
                 if crate::platform::open_droidbridge_controls_editor() {
                     self.catalog.status =
                         "Opened DroidBridge Controls Editor (full keyboard & key pickers).".into();
                 } else {
-                    let game_home = self.catalog.config.game_home(&self.home);
-                    let mut tc = horizon_client::touch::TouchControls::default();
-                    tc.settings = horizon_client::touch::Settings::load_from(
-                        &game_home.join("horizon-touch.json"),
-                    );
-                    tc.open_editor();
-                    self.control_editor = Some(tc);
+                    self.catalog.status =
+                        "Could not open DroidBridge Controls Editor. Is DroidBridge installed and ControlsEditorActivity exported?".into();
                 }
             }
             Some(Action::CloseControlEditor) => {
