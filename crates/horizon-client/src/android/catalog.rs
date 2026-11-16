@@ -469,7 +469,7 @@ impl SettingsCategory {
             Self::Video => "Video Settings",
             Self::Launcher => "Launcher Settings",
             Self::Theme => "Theme Customization",
-            Self::Controls => "Controls & HUD Layout",
+            Self::Controls => "touch layout",
             Self::Experimental => "Experimental Stuff",
             Self::Diagnostics => "Diagnostics & Logs",
             Self::Account => "Account",
