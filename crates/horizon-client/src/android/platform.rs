@@ -371,6 +371,40 @@ pub fn open_url(url: &str) -> bool {
     })
     .is_some()
 }
+
+/// Launch DroidBridge's full ControlsEditorActivity (key pickers + full-size keyboard).
+/// Returns true if the Intent was successfully started.
+pub fn open_droidbridge_controls_editor() -> bool {
+    with_context(|env, activity| {
+        let intent = env.new_object("android/content/Intent", "()V", &[])?;
+        let pkg = JObject::from(env.new_string("ca.dnamobile.droidbridgelauncher")?);
+        let cls = JObject::from(env.new_string(
+            "ca.dnamobile.droidbridgelauncher.controls.ControlsEditorActivity",
+        )?);
+        env.call_method(
+            &intent,
+            "setClassName",
+            "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
+            &[JValue::Object(&pkg), JValue::Object(&cls)],
+        )?;
+        // FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TOP
+        env.call_method(
+            &intent,
+            "addFlags",
+            "(I)Landroid/content/Intent;",
+            &[JValue::Int(0x10000000 | 0x04000000)],
+        )?;
+        env.call_method(
+            activity,
+            "startActivity",
+            "(Landroid/content/Intent;)V",
+            &[JValue::Object(&intent)],
+        )?;
+        Ok(())
+    })
+    .is_some()
+}
+
 /// Public Android power/thermal status; no device identifiers or sysfs access.
 pub fn performance_power() -> serde_json::Value {
     with_context(|env, activity| {
