@@ -46,6 +46,8 @@ mod documents;
 mod exit_reports;
 #[path = "android/gallery.rs"]
 mod gallery;
+#[path = "android/host_input_jni.rs"]
+mod host_input_jni;
 #[path = "android/native_ime.rs"]
 mod native_ime;
 #[path = "android/performance.rs"]

@@ -57,6 +57,20 @@ mod allays;
 mod android_bundled;
 #[cfg(target_os = "android")]
 mod android_input;
+#[cfg(target_os = "android")]
+mod host_input;
+
+/// The Java overlay (`dev.horizon.android.controls`) draws the touch controls.
+fn host_controls_attached() -> bool {
+    #[cfg(target_os = "android")]
+    {
+        crate::host_input_jni::controls_attached()
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        false
+    }
+}
 mod armor_stands;
 mod atlas_slots;
 mod banners;
@@ -2241,6 +2255,8 @@ struct Game<'a> {
     /// The cursor icon the window shows (`widgets::take_cursor` each frame).
     cursor_icon: horizon_client::widgets::Cursor,
     captured: bool,
+    /// Last pointer position the host overlay sent, for grabbed-camera deltas.
+    host_cursor: Option<[f32; 2]>,
     os_mouse_captured: bool,
     was_menu_blurred: bool,
     /// Only the local player owning keyboard and mouse changes the native pointer.
@@ -15132,7 +15148,8 @@ impl Game<'_> {
             self.pad.touch.in_inventory =
                 matches!(self.screen, Screen::Inventory | Screen::Creative);
             self.pad.touch.goy_rendered_by_ui = true;
-            if (in_menu || !self.ui.hide_gui)
+            if !host_controls_attached()
+                && (in_menu || !self.ui.hide_gui)
                 && (self.player.is_some() || self.settings.keypad.enabled)
                 && (!hud_in_menu
                     || self.android_inventory_controls()
@@ -15166,7 +15183,7 @@ impl Game<'_> {
         #[cfg(target_os = "android")]
         {
             self.android_sync_pointer();
-            if self.pad.touch.editor.is_none() {
+            if self.pad.touch.editor.is_none() && !host_controls_attached() {
                 self.pad.touch_ui.goy_mode = self.pad.touch.settings.control_style
                     == horizon_client::touch::ControlStyle::GoyControl;
                 self.pad
@@ -18344,6 +18361,8 @@ impl Game<'_> {
         #[cfg(target_os = "android")]
         self.android_poll_keyboard();
         #[cfg(target_os = "android")]
+        self.android_drain_host_input(event_loop);
+        #[cfg(target_os = "android")]
         if let Some(renderer) = &mut self.renderer {
             renderer.set_detailed_gpu_timing(
                 crate::performance::active() || crate::device_runtime::preferences().gpu_profile,
@@ -18573,6 +18592,7 @@ impl<'a> Game<'a> {
             cursor: (0.0, 0.0),
             cursor_icon: horizon_client::widgets::Cursor::Arrow,
             captured: false,
+            host_cursor: None,
             os_mouse_captured: false,
             was_menu_blurred: false,
             keyboard_mouse: true,
