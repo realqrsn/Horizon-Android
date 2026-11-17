@@ -27,6 +27,18 @@ public final class HorizonActivity extends android.app.NativeActivity {
         loadGame();
         super.onCreate(savedInstanceState);
         applyHighRefreshRate(this, 0);
+        hostControls = new dev.horizon.android.controls.HostControls(this);
+        hostControls.attach();
+    }
+
+    private dev.horizon.android.controls.HostControls hostControls;
+
+    @Override protected void onDestroy() {
+        if (hostControls != null) {
+            hostControls.detach();
+            hostControls = null;
+        }
+        super.onDestroy();
     }
 
     private void loadGame() {
