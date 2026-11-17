@@ -656,6 +656,28 @@ pub struct KeyEvent {
 }
 
 /// Describes keyboard modifiers event.
+#[cfg(android_platform)]
+impl KeyEvent {
+    /// A key event made by the host app's own on-screen controls rather than by an Android
+    /// input device (`HorizonInput` in the Horizon engine).
+    pub fn host(
+        physical_key: keyboard::PhysicalKey,
+        logical_key: keyboard::Key,
+        text: Option<SmolStr>,
+        state: ElementState,
+    ) -> Self {
+        Self {
+            physical_key,
+            logical_key,
+            text,
+            location: keyboard::KeyLocation::Standard,
+            state,
+            repeat: false,
+            platform_specific: platform_impl::KeyEventExtra {},
+        }
+    }
+}
+
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Modifiers {
     pub(crate) state: ModifiersState,
