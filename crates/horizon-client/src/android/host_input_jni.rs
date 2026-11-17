@@ -36,6 +36,8 @@ static QUEUE: Mutex<VecDeque<HostEvent>> = Mutex::new(VecDeque::new());
 static GRABBED: AtomicBool = AtomicBool::new(false);
 static ATTACHED: AtomicBool = AtomicBool::new(false);
 static CONTROLS_ATTACHED: AtomicBool = AtomicBool::new(false);
+static IN_GAME: AtomicBool = AtomicBool::new(false);
+static KEYBOARD_REQUEST: AtomicBool = AtomicBool::new(false);
 static FPS: AtomicI32 = AtomicI32::new(0);
 static IME_INSET: AtomicI32 = AtomicI32::new(0);
 static CURSOR_SHAPE: AtomicI32 = AtomicI32::new(0);
@@ -58,6 +60,21 @@ pub fn attached() -> bool {
 /// True while the Java overlay is drawing the touch controls; the engine hides its own HUD.
 pub fn controls_attached() -> bool {
     CONTROLS_ATTACHED.load(Ordering::Relaxed)
+}
+
+/// Game thread: a world is open (not the launcher, a title screen or a loading screen).
+pub fn publish_in_game(in_game: bool) {
+    IN_GAME.store(in_game, Ordering::Relaxed);
+}
+
+/// The Java overlay is attached and a world is open, so it draws the controls.
+pub fn controls_active() -> bool {
+    CONTROLS_ATTACHED.load(Ordering::Relaxed) && IN_GAME.load(Ordering::Relaxed)
+}
+
+/// The overlay's keyboard button was pressed since the last call.
+pub fn take_keyboard_request() -> bool {
+    KEYBOARD_REQUEST.swap(false, Ordering::Relaxed)
 }
 
 /// Everything queued since the last call, in order.
@@ -146,4 +163,14 @@ extern "system" fn native_graphics_info(env: JNIEnv, _: JClass) -> jstring {
 #[unsafe(export_name = "Java_dev_horizon_android_HorizonInput_nativeSetControlsAttached")]
 extern "system" fn native_set_controls_attached(_: JNIEnv, _: JClass, attached: jboolean) {
     CONTROLS_ATTACHED.store(attached != 0, Ordering::Relaxed);
+}
+
+#[unsafe(export_name = "Java_dev_horizon_android_HorizonInput_nativeIsInGame")]
+extern "system" fn native_is_in_game(_: JNIEnv, _: JClass) -> jboolean {
+    IN_GAME.load(Ordering::Relaxed) as jboolean
+}
+
+#[unsafe(export_name = "Java_dev_horizon_android_HorizonInput_nativeRequestKeyboard")]
+extern "system" fn native_request_keyboard(_: JNIEnv, _: JClass) {
+    KEYBOARD_REQUEST.store(true, Ordering::Relaxed);
 }
