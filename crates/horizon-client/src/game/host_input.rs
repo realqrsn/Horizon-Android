@@ -105,6 +105,10 @@ impl Game<'_> {
     /// Called from `idle()`. Replays the host overlay's input as window events and reports
     /// grab state, frame rate and cursor shape back to it.
     pub(super) fn android_drain_host_input(&mut self, events: &dyn super::event_loop::EventLoopCtl) {
+        host_input_jni::publish_in_game(self.player.is_some() && self.title.is_none());
+        if host_input_jni::take_keyboard_request() {
+            self.android_show_keyboard();
+        }
         host_input_jni::publish_grabbed(self.captured && self.screen == Screen::Playing);
         host_input_jni::publish_fps(self.fps);
         let queued = host_input_jni::drain();
