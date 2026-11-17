@@ -64,7 +64,7 @@ mod host_input;
 fn host_controls_attached() -> bool {
     #[cfg(target_os = "android")]
     {
-        crate::host_input_jni::controls_attached()
+        crate::host_input_jni::controls_active()
     }
     #[cfg(not(target_os = "android"))]
     {
@@ -18346,6 +18346,8 @@ impl Game<'_> {
     }
     /// The loop ended: close the pads' output, save the world, write the perf report.
     pub(super) fn shut_down(&mut self) {
+        #[cfg(target_os = "android")]
+        crate::host_input_jni::publish_in_game(false);
         self.pad_close_output();
         if let Err(e) = self.save_for_exit() {
             log::warn!("Horizon: failed to save the world on exit: {e}");
