@@ -11,7 +11,6 @@ final class ControlsMenu {
     interface Host {
         boolean isEditMode();
         void setEditMode(boolean on);
-        void addButton();
         boolean controlsEnabled();
         void setControlsEnabled(boolean on);
         boolean showFps();
@@ -34,10 +33,6 @@ final class ControlsMenu {
         list.addView(Ui.button(a, host.isEditMode() ? "Finish editing layout" : "Edit layout", false, v -> {
             dialog[0].dismiss();
             host.setEditMode(!host.isEditMode());
-        }), lp);
-        list.addView(Ui.button(a, "Add button", false, v -> {
-            dialog[0].dismiss();
-            host.addButton();
         }), lp);
         list.addView(Ui.button(a, "Controls: " + (host.controlsEnabled() ? "ON" : "OFF"), false, v -> {
             dialog[0].dismiss();

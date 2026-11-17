@@ -4,25 +4,21 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-/** One on-screen control: what it looks like and what it does. Saved as JSON. */
+/** One on-screen control: what it does and how big it is. Saved as JSON. */
 public final class ControlButton {
     public static final String KEY = "key";
     public static final String MOUSE = "mouse";
     public static final String SCROLL = "scroll";
     public static final String MENU = "menu";
+    public static final String KEYBOARD = "keyboard";
     public static final String TOGGLE_CONTROLS = "toggle_controls";
     public static final String JOYSTICK = "joystick";
     public static final String DRAWER = "drawer";
 
-    public static final String[] ACTIONS = {KEY, MOUSE, SCROLL, MENU, TOGGLE_CONTROLS, JOYSTICK, DRAWER};
+    public static final String[] ACTIONS = {KEY, MOUSE, SCROLL, MENU, KEYBOARD, TOGGLE_CONTROLS, JOYSTICK, DRAWER};
     public static final String[] ACTION_NAMES = {
-        "Key", "Mouse button", "Scroll wheel", "Open menu", "Toggle controls", "Joystick", "Drawer"
+        "Key", "Mouse button", "Scroll wheel", "Open menu", "Keyboard", "Toggle controls", "Joystick", "Drawer"
     };
-
-    public static final int VIS_ALWAYS = 0;
-    public static final int VIS_IN_GAME = 1;
-    public static final int VIS_IN_MENU = 2;
-    public static final String[] VIS_NAMES = {"Always", "In game only", "In menus only"};
 
     public String id = "";
     public String label = "";
@@ -36,17 +32,16 @@ public final class ControlButton {
     /** Centre of the button as a fraction of the screen. */
     public float x = 0.5f;
     public float y = 0.5f;
-    public int sizePercent = 100;
-    public int opacityPercent = 70;
-    public int cornerPercent = 50;
-    public int strokeDp = 2;
-    public int strokeColor = 0xFFFFFFFF;
-    public int backgroundColor = 0xFF000000;
-    public int activeColor = 0xFFD95700;
+    public float widthDp = 59;
+    public float heightDp = 59;
     public boolean toggle = false;
+    public int toggleColor = 0xFF25D380;
     public boolean repeatOnHold = false;
+    public boolean visibleInGame = true;
+    public boolean visibleInMenu = true;
+    public boolean stayVisible = false;
     public boolean mousePassthrough = false;
-    public int visibility = VIS_ALWAYS;
+    public boolean swipeable = false;
     public int deadzonePercent = 15;
     public boolean joystickFloating = false;
     public boolean forwardLock = true;
@@ -58,6 +53,13 @@ public final class ControlButton {
         return action.equals(a);
     }
 
+    public ControlButton copy() {
+        try {
+            return fromJson(toJson());
+        } catch (JSONException e) {
+            return this;
+        }
+    }
 
     /** Copies every setting of {@code o} into this button, keeping this object's identity. */
     public void set(ControlButton o) {
@@ -65,22 +67,13 @@ public final class ControlButton {
             ControlButton c = fromJson(o.toJson());
             id = c.id; label = c.label; action = c.action; keys = c.keys; sprintKey = c.sprintKey;
             mouseButton = c.mouseButton; scrollDirection = c.scrollDirection; x = c.x; y = c.y;
-            sizePercent = c.sizePercent; opacityPercent = c.opacityPercent; cornerPercent = c.cornerPercent;
-            strokeDp = c.strokeDp; strokeColor = c.strokeColor; backgroundColor = c.backgroundColor;
-            activeColor = c.activeColor; toggle = c.toggle; repeatOnHold = c.repeatOnHold;
-            mousePassthrough = c.mousePassthrough; visibility = c.visibility;
+            widthDp = c.widthDp; heightDp = c.heightDp; toggle = c.toggle; toggleColor = c.toggleColor;
+            repeatOnHold = c.repeatOnHold; visibleInGame = c.visibleInGame; visibleInMenu = c.visibleInMenu;
+            stayVisible = c.stayVisible; mousePassthrough = c.mousePassthrough; swipeable = c.swipeable;
             deadzonePercent = c.deadzonePercent; joystickFloating = c.joystickFloating;
             forwardLock = c.forwardLock; parentId = c.parentId; drawerHorizontal = c.drawerHorizontal;
             drawerOpenByDefault = c.drawerOpenByDefault;
         } catch (JSONException ignored) {
-        }
-    }
-
-    public ControlButton copy() {
-        try {
-            return fromJson(toJson());
-        } catch (JSONException e) {
-            return this;
         }
     }
 
@@ -97,17 +90,16 @@ public final class ControlButton {
         o.put("scrollDirection", scrollDirection);
         o.put("x", x);
         o.put("y", y);
-        o.put("sizePercent", sizePercent);
-        o.put("opacityPercent", opacityPercent);
-        o.put("cornerPercent", cornerPercent);
-        o.put("strokeDp", strokeDp);
-        o.put("strokeColor", strokeColor);
-        o.put("backgroundColor", backgroundColor);
-        o.put("activeColor", activeColor);
+        o.put("widthDp", widthDp);
+        o.put("heightDp", heightDp);
         o.put("toggle", toggle);
+        o.put("toggleColor", toggleColor);
         o.put("repeatOnHold", repeatOnHold);
+        o.put("visibleInGame", visibleInGame);
+        o.put("visibleInMenu", visibleInMenu);
+        o.put("stayVisible", stayVisible);
         o.put("mousePassthrough", mousePassthrough);
-        o.put("visibility", visibility);
+        o.put("swipeable", swipeable);
         o.put("deadzonePercent", deadzonePercent);
         o.put("joystickFloating", joystickFloating);
         o.put("forwardLock", forwardLock);
@@ -129,17 +121,16 @@ public final class ControlButton {
         b.scrollDirection = o.optInt("scrollDirection", 1);
         b.x = (float) o.optDouble("x", 0.5);
         b.y = (float) o.optDouble("y", 0.5);
-        b.sizePercent = o.optInt("sizePercent", 100);
-        b.opacityPercent = o.optInt("opacityPercent", 70);
-        b.cornerPercent = o.optInt("cornerPercent", 50);
-        b.strokeDp = o.optInt("strokeDp", 2);
-        b.strokeColor = o.optInt("strokeColor", 0xFFFFFFFF);
-        b.backgroundColor = o.optInt("backgroundColor", 0xFF000000);
-        b.activeColor = o.optInt("activeColor", 0xFFD95700);
+        b.widthDp = (float) o.optDouble("widthDp", 59);
+        b.heightDp = (float) o.optDouble("heightDp", 59);
         b.toggle = o.optBoolean("toggle", false);
+        b.toggleColor = o.optInt("toggleColor", 0xFF25D380);
         b.repeatOnHold = o.optBoolean("repeatOnHold", false);
+        b.visibleInGame = o.optBoolean("visibleInGame", true);
+        b.visibleInMenu = o.optBoolean("visibleInMenu", true);
+        b.stayVisible = o.optBoolean("stayVisible", false);
         b.mousePassthrough = o.optBoolean("mousePassthrough", false);
-        b.visibility = o.optInt("visibility", VIS_ALWAYS);
+        b.swipeable = o.optBoolean("swipeable", false);
         b.deadzonePercent = o.optInt("deadzonePercent", 15);
         b.joystickFloating = o.optBoolean("joystickFloating", false);
         b.forwardLock = o.optBoolean("forwardLock", true);

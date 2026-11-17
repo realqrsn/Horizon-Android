@@ -2,8 +2,8 @@ package dev.horizon.android.controls;
 
 import android.content.Context;
 import android.graphics.Canvas;
-import android.graphics.DashPathEffect;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.RectF;
 import android.os.Handler;
 import android.os.Looper;
@@ -13,26 +13,30 @@ import dev.horizon.android.HorizonInput;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
 /**
  * Draws every control and turns touches into HorizonInput calls. One view, one touch handler,
  * so fingers on different buttons work together. Touches that miss every button drive the
- * camera (grabbed) or act as a mouse (menus).
+ * camera (grabbed) or act as a mouse (menus). In edit mode buttons are dragged to move and
+ * resized with the handle on the selected one.
  */
 public final class ControlsOverlay extends View {
     public interface Listener {
         void onMenuRequested();
         void onEditButton(ControlButton button);
+        /** A drag or resize is about to change the layout (take an undo snapshot). */
+        void onBeforeChange();
+        /** A drag or resize finished. */
         void onLayoutChanged();
-        void onEditDone();
     }
 
     private static final int CLAIM_BUTTON = 0;
     private static final int CLAIM_CAMERA = 1;
-    private static final int CLAIM_EDIT = 2;
-    private static final int CLAIM_DONE = 3;
+    private static final int CLAIM_MOVE = 2;
+    private static final int CLAIM_RESIZE = 3;
 
     private static final class Claim {
         int type;
@@ -44,8 +48,7 @@ public final class ControlsOverlay extends View {
         boolean cameraPrimed;
         Runnable longPress;
         Runnable repeat;
-        float startFx, startFy;
-        // Joystick
+        float startX, startY, startW, startH;
         float centerX, centerY, knobX, knobY;
         final boolean[] held = new boolean[4];
         boolean sprint;
@@ -59,16 +62,17 @@ public final class ControlsOverlay extends View {
     private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint stroke = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint text = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final RectF tmp = new RectF();
-    private final RectF doneRect = new RectF();
+    private final Path clip = new Path();
     private final float density;
     private final float slop;
 
     private List<ControlButton> buttons;
+    private ControlsStore.Globals globals = new ControlsStore.Globals();
     private Listener listener;
     private boolean editMode;
     private boolean grabbed;
     private boolean controlsEnabled = true;
+    private String selectedId = "";
 
     public ControlsOverlay(Context context, List<ControlButton> buttons) {
         super(context);
@@ -77,7 +81,6 @@ public final class ControlsOverlay extends View {
         slop = 8f * density;
         stroke.setStyle(Paint.Style.STROKE);
         text.setTextAlign(Paint.Align.CENTER);
-        text.setFakeBoldText(true);
         resetDrawers();
         setWillNotDraw(false);
     }
@@ -86,6 +89,11 @@ public final class ControlsOverlay extends View {
     public boolean isEditMode() { return editMode; }
     public boolean isControlsEnabled() { return controlsEnabled; }
 
+    public void setGlobals(ControlsStore.Globals g) {
+        globals = g;
+        invalidate();
+    }
+
     public void setButtons(List<ControlButton> list) {
         releaseAll();
         buttons = list;
@@ -93,10 +101,16 @@ public final class ControlsOverlay extends View {
         invalidate();
     }
 
+    public void setSelected(String id) {
+        selectedId = id == null ? "" : id;
+        invalidate();
+    }
+
     public void setEditMode(boolean on) {
         if (editMode == on) return;
         releaseAll();
         editMode = on;
+        if (!on) selectedId = "";
         invalidate();
     }
 
@@ -127,15 +141,26 @@ public final class ControlsOverlay extends View {
         return null;
     }
 
-    private float sizeOf(ControlButton b) {
-        return dp(b.is(ControlButton.JOYSTICK) ? 150 : 56) * b.sizePercent / 100f;
+    private float scale() { return globals.scale / 100f; }
+
+    private float widthOf(ControlButton b) {
+        float w = dp(b.widthDp) * scale();
+        return b.is(ControlButton.JOYSTICK) ? Math.min(w, dp(b.heightDp) * scale()) : w;
+    }
+
+    private float heightOf(ControlButton b) {
+        float h = dp(b.heightDp) * scale();
+        return b.is(ControlButton.JOYSTICK) ? Math.min(h, dp(b.widthDp) * scale()) : h;
     }
 
     private RectF baseRect(ControlButton b) {
-        float s = sizeOf(b);
-        float cx = Math.max(s / 2, Math.min(getWidth() - s / 2, b.x * getWidth()));
-        float cy = Math.max(s / 2, Math.min(getHeight() - s / 2, b.y * getHeight()));
-        return new RectF(cx - s / 2, cy - s / 2, cx + s / 2, cy + s / 2);
+        float w = widthOf(b), h = heightOf(b);
+        float pad = dp(globals.paddingDp);
+        float minX = pad + w / 2, maxX = Math.max(minX, getWidth() - pad - w / 2);
+        float minY = pad + h / 2, maxY = Math.max(minY, getHeight() - pad - h / 2);
+        float cx = Math.max(minX, Math.min(maxX, b.x * getWidth()));
+        float cy = Math.max(minY, Math.min(maxY, b.y * getHeight()));
+        return new RectF(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2);
     }
 
     private ControlButton parentDrawer(ControlButton b) {
@@ -153,25 +178,24 @@ public final class ControlsOverlay extends View {
         float offset = gap;
         for (ControlButton c : buttons) {
             if (!p.id.equals(c.parentId)) continue;
-            float cs = sizeOf(c);
+            float cw = widthOf(c), ch = heightOf(c);
             if (c == b) {
                 if (horizontal) {
-                    float left = dir > 0 ? pr.right + offset : pr.left - offset - cs;
-                    return new RectF(left, pr.centerY() - cs / 2, left + cs, pr.centerY() + cs / 2);
+                    float left = dir > 0 ? pr.right + offset : pr.left - offset - cw;
+                    return new RectF(left, pr.centerY() - ch / 2, left + cw, pr.centerY() + ch / 2);
                 }
-                float top = dir > 0 ? pr.bottom + offset : pr.top - offset - cs;
-                return new RectF(pr.centerX() - cs / 2, top, pr.centerX() + cs / 2, top + cs);
+                float top = dir > 0 ? pr.bottom + offset : pr.top - offset - ch;
+                return new RectF(pr.centerX() - cw / 2, top, pr.centerX() + cw / 2, top + ch);
             }
-            offset += cs + gap;
+            offset += (horizontal ? cw : ch) + gap;
         }
         return pr;
     }
 
     private boolean visible(ControlButton b) {
         if (editMode) return true;
-        if (!controlsEnabled && !b.is(ControlButton.TOGGLE_CONTROLS)) return false;
-        if (b.visibility == ControlButton.VIS_IN_GAME && !grabbed) return false;
-        if (b.visibility == ControlButton.VIS_IN_MENU && grabbed) return false;
+        if (!controlsEnabled && !b.stayVisible && !b.is(ControlButton.TOGGLE_CONTROLS)) return false;
+        if (grabbed ? !b.visibleInGame : !b.visibleInMenu) return false;
         ControlButton p = parentDrawer(b);
         return p == null || (visible(p) && openDrawers.contains(p.id));
     }
@@ -181,10 +205,16 @@ public final class ControlsOverlay extends View {
             ControlButton b = buttons.get(i);
             if (!visible(b)) continue;
             RectF r = new RectF(rectOf(b));
-            if (b.is(ControlButton.JOYSTICK) && b.joystickFloating) r.inset(-sizeOf(b) * 0.4f, -sizeOf(b) * 0.4f);
+            if (b.is(ControlButton.JOYSTICK) && b.joystickFloating) r.inset(-r.width() * 0.4f, -r.height() * 0.4f);
             if (r.contains(x, y)) return b;
         }
         return null;
+    }
+
+    private boolean onHandle(ControlButton b, float x, float y) {
+        RectF r = rectOf(b);
+        float cx = r.right - dp(8), cy = r.bottom - dp(8);
+        return Math.hypot(x - cx, y - cy) <= dp(24);
     }
 
     // ---------------------------------------------------------------- drawing
@@ -195,80 +225,82 @@ public final class ControlsOverlay extends View {
     }
 
     private String labelOf(ControlButton b) {
-        if (!b.label.isEmpty()) return b.label;
-        if (b.is(ControlButton.KEY)) return Glfw.shortLabel(b.keys[0]);
-        if (b.is(ControlButton.MOUSE)) return b.mouseButton == 0 ? "LMB" : b.mouseButton == 1 ? "RMB" : "MMB";
-        if (b.is(ControlButton.SCROLL)) return b.scrollDirection > 0 ? "\u25B2" : "\u25BC";
-        if (b.is(ControlButton.MENU)) return "Menu";
-        if (b.is(ControlButton.TOGGLE_CONTROLS)) return "Hide";
-        if (b.is(ControlButton.DRAWER)) return openDrawers.contains(b.id) ? "\u25C0" : "\u25B6";
-        return "";
+        String s;
+        if (!b.label.isEmpty()) s = b.label;
+        else if (b.is(ControlButton.KEY)) s = Glfw.shortLabel(b.keys[0]);
+        else if (b.is(ControlButton.MOUSE)) s = b.mouseButton == 0 ? "Attack" : b.mouseButton == 1 ? "Use" : "Pick";
+        else if (b.is(ControlButton.SCROLL)) s = b.scrollDirection > 0 ? "\u25B2" : "\u25BC";
+        else if (b.is(ControlButton.MENU)) s = "Menu";
+        else if (b.is(ControlButton.KEYBOARD)) s = "Keyboard";
+        else if (b.is(ControlButton.TOGGLE_CONTROLS)) s = "Hide";
+        else if (b.is(ControlButton.DRAWER)) s = openDrawers.contains(b.id) ? "\u25C0" : "\u25B6";
+        else s = "";
+        if (globals.textCase == 1) return s.toUpperCase(Locale.getDefault());
+        if (globals.textCase == 2) return s.toLowerCase(Locale.getDefault());
+        return s;
     }
 
     @Override
     protected void onDraw(Canvas c) {
-        float w = getWidth();
+        float alpha = globals.opacity / 100f;
         for (ControlButton b : buttons) {
             if (!visible(b)) continue;
-            Claim joy = joystickClaim(b);
             RectF r = rectOf(b);
-            float alpha = b.opacityPercent / 100f;
+            if (b.is(ControlButton.JOYSTICK)) {
+                drawJoystick(c, b, r, joystickClaim(b), alpha);
+                continue;
+            }
             boolean pressed = pressedIds.contains(b.id);
             boolean active = toggled.contains(b.id);
-            if (b.is(ControlButton.JOYSTICK)) {
-                drawJoystick(c, b, r, joy, alpha);
-            } else {
-                float rx = Math.min(r.width(), r.height()) * Math.max(0, Math.min(50, b.cornerPercent)) / 100f;
-                int base = active ? b.activeColor : b.backgroundColor;
-                fill.setStyle(Paint.Style.FILL);
-                fill.setColor(withAlpha(pressed ? b.activeColor : base, pressed ? Math.min(1f, alpha + 0.25f) : alpha * (active ? 1f : 0.7f)));
-                c.drawRoundRect(r, rx, rx, fill);
-                if (b.strokeDp > 0) {
-                    stroke.setStrokeWidth(dp(b.strokeDp));
-                    stroke.setColor(withAlpha(b.strokeColor, alpha));
-                    tmp.set(r);
-                    tmp.inset(dp(b.strokeDp) / 2, dp(b.strokeDp) / 2);
-                    c.drawRoundRect(tmp, rx, rx, stroke);
-                }
-                drawLabel(c, labelOf(b), r, alpha);
+            float rx = Math.min(dp(globals.radiusDp), Math.min(r.width(), r.height()) / 2f);
+            fill.setStyle(Paint.Style.FILL);
+            fill.setColor(withAlpha(active ? b.toggleColor : pressed ? 0xFF3A3A3A : 0xFF0A0A0A, alpha));
+            c.drawRoundRect(r, rx, rx, fill);
+            if (globals.strokeDp > 0) {
+                float sw = dp(globals.strokeDp);
+                stroke.setStrokeWidth(sw);
+                stroke.setColor(withAlpha(0xFFE3D2C8, alpha));
+                RectF in = new RectF(r.left + sw / 2, r.top + sw / 2, r.right - sw / 2, r.bottom - sw / 2);
+                c.drawRoundRect(in, rx, rx, stroke);
             }
-            if (editMode) {
-                stroke.setStrokeWidth(dp(1.5f));
-                stroke.setColor(0xFFFFD54F);
-                stroke.setPathEffect(new DashPathEffect(new float[] {dp(5), dp(4)}, 0));
-                tmp.set(r);
-                tmp.inset(-dp(3), -dp(3));
-                c.drawRoundRect(tmp, dp(8), dp(8), stroke);
-                stroke.setPathEffect(null);
-            }
+            drawLabel(c, labelOf(b), r, alpha, active ? 0xFF000000 : 0xFFF5EDE8);
+            if (editMode && b.id.equals(selectedId)) drawHandle(c, r, rx);
         }
         if (editMode) {
-            float pw = dp(132), ph = dp(38);
-            doneRect.set(w / 2 - pw / 2, dp(10), w / 2 + pw / 2, dp(10) + ph);
-            fill.setStyle(Paint.Style.FILL);
-            fill.setColor(0xFFD95700);
-            c.drawRoundRect(doneRect, ph / 2, ph / 2, fill);
-            text.setColor(0xFFFFFFFF);
-            text.setTextSize(dp(14));
-            c.drawText("Done editing", doneRect.centerX(), doneRect.centerY() + dp(5), text);
-            text.setTextSize(dp(11));
-            text.setColor(0xCCFFFFFF);
-            c.drawText("Drag to move \u2022 tap a button for settings", w / 2, doneRect.bottom + dp(16), text);
+            stroke.setStrokeWidth(dp(2));
+            stroke.setColor(0xFFE8862A);
+            c.drawRoundRect(new RectF(dp(4), dp(4), getWidth() - dp(4), getHeight() - dp(4)), dp(4), dp(4), stroke);
         }
     }
 
-    private void drawLabel(Canvas c, String label, RectF r, float alpha) {
+    private void drawLabel(Canvas c, String label, RectF r, float alpha, int color) {
         if (label.isEmpty()) return;
-        float size = r.height() * 0.3f;
+        float size = Math.min(r.height() * 0.5f, dp(15));
         text.setTextSize(size);
-        float maxW = r.width() * 0.84f;
+        float maxW = r.width() * 0.9f;
         float measured = text.measureText(label);
         if (measured > maxW) {
             size *= maxW / measured;
             text.setTextSize(size);
         }
-        text.setColor(withAlpha(0xFFFFFFFF, Math.min(1f, alpha + 0.3f)));
+        text.setColor(withAlpha(color, Math.min(1f, alpha + 0.2f)));
         c.drawText(label, r.centerX(), r.centerY() + size * 0.35f, text);
+    }
+
+    private void drawHandle(Canvas c, RectF r, float rx) {
+        c.save();
+        clip.reset();
+        clip.addRoundRect(r, rx, rx, Path.Direction.CW);
+        c.clipPath(clip);
+        float cx = r.right - dp(8), cy = r.bottom - dp(8), rad = dp(18);
+        fill.setStyle(Paint.Style.FILL);
+        fill.setColor(0xFF1E7B55);
+        c.drawCircle(cx, cy, rad, fill);
+        stroke.setStrokeWidth(dp(1.5f));
+        stroke.setColor(0x99FFFFFF);
+        c.drawLine(cx - dp(2), cy + dp(10), cx + dp(10), cy - dp(2), stroke);
+        c.drawLine(cx + dp(2), cy + dp(10), cx + dp(10), cy + dp(2), stroke);
+        c.restore();
     }
 
     private void drawJoystick(Canvas c, ControlButton b, RectF r, Claim claim, float alpha) {
@@ -277,23 +309,18 @@ public final class ControlsOverlay extends View {
         float radius = r.width() / 2f;
         if (b.joystickFloating && claim == null && !editMode) return;
         fill.setStyle(Paint.Style.FILL);
-        fill.setColor(withAlpha(b.backgroundColor, alpha * 0.45f));
+        fill.setColor(withAlpha(0xFF101010, alpha));
         c.drawCircle(cx, cy, radius, fill);
-        if (b.strokeDp > 0) {
-            stroke.setStrokeWidth(dp(b.strokeDp));
-            stroke.setColor(withAlpha(b.strokeColor, alpha));
-            c.drawCircle(cx, cy, radius - dp(b.strokeDp) / 2, stroke);
-        }
-        float knobR = radius * 0.42f;
+        stroke.setStrokeWidth(dp(1));
+        stroke.setColor(withAlpha(0xFF6B6B6B, alpha));
+        c.drawCircle(cx, cy, radius - dp(0.5f), stroke);
+        stroke.setColor(withAlpha(0xFF2E2E2E, alpha));
+        c.drawCircle(cx, cy, radius * 0.58f, stroke);
         float kx = claim != null ? claim.knobX : cx;
         float ky = claim != null ? claim.knobY : cy;
-        fill.setColor(withAlpha(claim != null && claim.sprint ? b.activeColor : b.strokeColor, Math.min(1f, alpha + 0.1f) * 0.8f));
-        c.drawCircle(kx, ky, knobR, fill);
-        if (b.forwardLock) {
-            text.setColor(withAlpha(0xFFFFFFFF, alpha));
-            text.setTextSize(radius * 0.22f);
-            c.drawText("\u25B2", cx, cy - radius + radius * 0.3f, text);
-        }
+        fill.setColor(withAlpha(claim != null && claim.sprint ? b.toggleColor : 0xFF5F5F5F, alpha));
+        c.drawCircle(kx, ky, radius * 0.38f, fill);
+        if (editMode && b.id.equals(selectedId)) drawHandle(c, r, radius);
     }
 
     private Claim joystickClaim(ControlButton b) {
@@ -341,16 +368,24 @@ public final class ControlsOverlay extends View {
         cl.downY = cl.lastY = y;
         cl.downTime = System.currentTimeMillis();
         if (editMode) {
-            if (doneRect.contains(x, y)) {
-                cl.type = CLAIM_DONE;
-            } else {
-                ControlButton b = hit(x, y);
-                if (b == null) return;
-                cl.type = CLAIM_EDIT;
-                cl.button = b;
-                cl.startFx = b.x;
-                cl.startFy = b.y;
+            ControlButton sel = find(selectedId);
+            if (sel != null && visible(sel) && onHandle(sel, x, y)) {
+                cl.type = CLAIM_RESIZE;
+                cl.button = sel;
+                cl.startW = sel.widthDp;
+                cl.startH = sel.heightDp;
+                claims.put(id, cl);
+                return;
             }
+            ControlButton b = hit(x, y);
+            if (b == null) {
+                setSelected("");
+                return;
+            }
+            cl.type = CLAIM_MOVE;
+            cl.button = b;
+            cl.startX = b.x;
+            cl.startY = b.y;
             claims.put(id, cl);
             return;
         }
@@ -382,30 +417,59 @@ public final class ControlsOverlay extends View {
         }
     }
 
+    private float snapTo(float v) {
+        float grid = dp(8);
+        return Math.round(v / grid) * grid;
+    }
+
     private void move(int id, float x, float y) {
         Claim cl = claims.get(id);
         if (cl == null) return;
+        boolean wasMoved = cl.moved;
         if (!cl.moved && Math.hypot(x - cl.downX, y - cl.downY) > slop) cl.moved = true;
         switch (cl.type) {
             case CLAIM_CAMERA:
                 if (!grabbed || cl.moved) HorizonInput.cursor(x, y);
                 break;
-            case CLAIM_EDIT:
+            case CLAIM_MOVE:
                 if (cl.moved && parentDrawer(cl.button) == null) {
-                    cl.button.x = Math.max(0.02f, Math.min(0.98f, cl.startFx + (x - cl.downX) / getWidth()));
-                    cl.button.y = Math.max(0.02f, Math.min(0.98f, cl.startFy + (y - cl.downY) / getHeight()));
+                    if (!wasMoved && listener != null) listener.onBeforeChange();
+                    float w = widthOf(cl.button), h = heightOf(cl.button);
+                    float cx = cl.startX * getWidth() + (x - cl.downX);
+                    float cy = cl.startY * getHeight() + (y - cl.downY);
+                    if (globals.snap) {
+                        cx = snapTo(cx - w / 2) + w / 2;
+                        cy = snapTo(cy - h / 2) + h / 2;
+                    }
+                    cl.button.x = Math.max(0.01f, Math.min(0.99f, cx / getWidth()));
+                    cl.button.y = Math.max(0.01f, Math.min(0.99f, cy / getHeight()));
+                    invalidate();
+                }
+                break;
+            case CLAIM_RESIZE:
+                if (cl.moved) {
+                    if (!wasMoved && listener != null) listener.onBeforeChange();
+                    float per = density * scale();
+                    float nw = Math.max(14f, Math.min(500f, cl.startW + (x - cl.downX) / per));
+                    float nh = Math.max(14f, Math.min(500f, cl.startH + (y - cl.downY) / per));
+                    if (cl.button.is(ControlButton.JOYSTICK)) nw = nh = Math.max(nw, nh);
+                    cl.button.widthDp = nw;
+                    cl.button.heightDp = nh;
                     invalidate();
                 }
                 break;
             case CLAIM_BUTTON:
                 if (cl.button.is(ControlButton.JOYSTICK)) {
                     moveJoystick(cl, x, y);
-                } else if (cl.button.mousePassthrough && grabbed) {
-                    if (!cl.cameraPrimed) {
-                        cl.cameraPrimed = true;
-                        HorizonInput.cursorSilently(cl.lastX, cl.lastY);
+                } else {
+                    swipeTo(cl, x, y);
+                    if (cl.button.mousePassthrough && grabbed) {
+                        if (!cl.cameraPrimed) {
+                            cl.cameraPrimed = true;
+                            HorizonInput.cursorSilently(cl.lastX, cl.lastY);
+                        }
+                        HorizonInput.cursor(x, y);
                     }
-                    HorizonInput.cursor(x, y);
                 }
                 break;
             default:
@@ -415,14 +479,26 @@ public final class ControlsOverlay extends View {
         cl.lastY = y;
     }
 
-    private void up(int id, float x, float y, boolean cancelled) {
-        Claim cl = claims.remove(id);
-        if (cl == null) return;
-        finish(cl, x, y, cancelled);
+    /** Sliding a held finger from one swipeable button onto another hands the press over. */
+    private void swipeTo(Claim cl, float x, float y) {
+        ControlButton from = cl.button;
+        if (!from.swipeable || rectOf(from).contains(x, y)) return;
+        ControlButton to = hit(x, y);
+        if (to == null || to == from || !to.swipeable || to.is(ControlButton.JOYSTICK)) return;
+        releaseButton(cl, true);
+        cl.button = to;
+        pressButton(cl, x, y);
         invalidate();
     }
 
-    private void finish(Claim cl, float x, float y, boolean cancelled) {
+    private void up(int id, float x, float y, boolean cancelled) {
+        Claim cl = claims.remove(id);
+        if (cl == null) return;
+        finish(cl, cancelled);
+        invalidate();
+    }
+
+    private void finish(Claim cl, boolean cancelled) {
         if (cl.longPress != null) handler.removeCallbacks(cl.longPress);
         switch (cl.type) {
             case CLAIM_CAMERA:
@@ -436,15 +512,16 @@ public final class ControlsOverlay extends View {
             case CLAIM_BUTTON:
                 releaseButton(cl, cancelled);
                 break;
-            case CLAIM_EDIT:
+            case CLAIM_MOVE:
                 if (cl.moved) {
                     if (listener != null) listener.onLayoutChanged();
-                } else if (!cancelled && listener != null) {
-                    listener.onEditButton(cl.button);
+                } else if (!cancelled) {
+                    setSelected(cl.button.id);
+                    if (listener != null) listener.onEditButton(cl.button);
                 }
                 break;
-            case CLAIM_DONE:
-                if (!cancelled && doneRect.contains(x, y) && listener != null) listener.onEditDone();
+            case CLAIM_RESIZE:
+                if (cl.moved && listener != null) listener.onLayoutChanged();
                 break;
             default:
                 break;
@@ -452,7 +529,7 @@ public final class ControlsOverlay extends View {
     }
 
     public void releaseAll() {
-        for (Claim cl : new HashMap<>(claims).values()) finish(cl, cl.lastX, cl.lastY, true);
+        for (Claim cl : new HashMap<>(claims).values()) finish(cl, true);
         claims.clear();
         pressedIds.clear();
         invalidate();
@@ -520,7 +597,10 @@ public final class ControlsOverlay extends View {
 
     private void releaseButton(Claim cl, boolean cancelled) {
         ControlButton b = cl.button;
-        if (cl.repeat != null) handler.removeCallbacks(cl.repeat);
+        if (cl.repeat != null) {
+            handler.removeCallbacks(cl.repeat);
+            cl.repeat = null;
+        }
         pressedIds.remove(b.id);
         switch (b.action) {
             case ControlButton.KEY:
@@ -532,13 +612,14 @@ public final class ControlsOverlay extends View {
             case ControlButton.MENU:
                 if (!cancelled && listener != null) listener.onMenuRequested();
                 break;
+            case ControlButton.KEYBOARD:
+                if (!cancelled) HorizonInput.requestKeyboard();
+                break;
             case ControlButton.TOGGLE_CONTROLS:
                 if (!cancelled) setControlsEnabled(!controlsEnabled);
                 break;
             case ControlButton.DRAWER:
-                if (!cancelled) {
-                    if (!openDrawers.remove(b.id)) openDrawers.add(b.id);
-                }
+                if (!cancelled && !openDrawers.remove(b.id)) openDrawers.add(b.id);
                 break;
             case ControlButton.JOYSTICK:
                 for (int i = 0; i < 4; i++) if (cl.held[i] && b.keys[i] != 0) HorizonInput.key(b.keys[i], false);
@@ -553,7 +634,7 @@ public final class ControlsOverlay extends View {
 
     private void moveJoystick(Claim cl, float x, float y) {
         ControlButton b = cl.button;
-        float radius = sizeOf(b) / 2f;
+        float radius = widthOf(b) / 2f;
         float dx = x - cl.centerX;
         float dy = y - cl.centerY;
         float dist = (float) Math.hypot(dx, dy);

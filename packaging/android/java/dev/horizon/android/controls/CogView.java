@@ -28,6 +28,7 @@ public final class CogView extends View {
     private Drawable gear;
     private Listener listener;
     private boolean showFps;
+    private boolean editing;
     private int fps;
     private float downRawX, downRawY, startX, startY;
     private boolean dragging;
@@ -36,7 +37,7 @@ public final class CogView extends View {
         super(context);
         density = context.getResources().getDisplayMetrics().density;
         slop = 8f * density;
-        fill.setColor(0x99000000);
+        fill.setColor(0xE6000000);
         stroke.setStyle(Paint.Style.STROKE);
         stroke.setStrokeWidth(density);
         stroke.setColor(0x66FFFFFF);
@@ -49,6 +50,12 @@ public final class CogView extends View {
     }
 
     public void setListener(Listener l) { listener = l; }
+
+    /** In the editor the cog turns brown, like DroidBridge's. */
+    public void setEditing(boolean on) {
+        editing = on;
+        invalidate();
+    }
 
     public void setShowFps(boolean on) {
         showFps = on;
@@ -70,12 +77,14 @@ public final class CogView extends View {
         float d = Math.min(w, h - badgeH);
         float cx = w / 2f;
         float cy = badgeH + d / 2f;
+        fill.setColor(editing ? 0xFF5A4636 : 0xE6000000);
+        stroke.setColor(editing ? 0x33FFFFFF : 0x99FFFFFF);
         c.drawCircle(cx, cy, d / 2f - density, fill);
         c.drawCircle(cx, cy, d / 2f - density, stroke);
         if (gear != null) {
             int pad = (int) (d * 0.25f);
             gear.setBounds((int) (cx - d / 2f) + pad, (int) (cy - d / 2f) + pad, (int) (cx + d / 2f) - pad, (int) (cy + d / 2f) - pad);
-            gear.setTint(0xFFFFFFFF);
+            gear.setTint(editing ? 0xFFF3DED0 : 0xFFFFFFFF);
             gear.draw(c);
         } else {
             text.setTextSize(d * 0.45f);

@@ -2,29 +2,34 @@ package dev.horizon.android.controls;
 
 import android.app.Dialog;
 import android.content.Context;
+import android.content.res.ColorStateList;
 import android.graphics.Color;
+import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
+import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.LinearLayout;
 import android.widget.SeekBar;
 import android.widget.Spinner;
-import android.widget.Switch;
 import android.widget.TextView;
-import android.widget.AdapterView;
 
-/** Small helpers so the dialogs share one dark, orange-accent look. */
+/** Shared look for the dialogs and the editor panel: near-black, brown panel, orange accent. */
 final class Ui {
-    static final int BG = 0xFF1E1A18;
+    static final int BG = 0xFF101010;
+    static final int PANEL = 0xFF54433A;
+    static final int BTN = 0xFF8B3000;
+    static final int ACCENT = 0xFFFFA726;
+    static final int TEXT = 0xFFF1E4DC;
+    static final int MUTED = 0xFFD2C0B6;
     static final int CARD = 0xFF2A2420;
-    static final int ACCENT = 0xFFD95700;
-    static final int TEXT = 0xFFFFF1E6;
-    static final int MUTED = 0xFFC9B5A8;
+    static final int PINK = 0xFFFFB4AB;
 
     private Ui() {}
 
@@ -52,7 +57,8 @@ final class Ui {
             w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             int sw = c.getResources().getDisplayMetrics().widthPixels;
             int sh = c.getResources().getDisplayMetrics().heightPixels;
-            w.setLayout(Math.min(dp(c, maxWidthDp), (int) (sw * 0.92f)), fullHeight ? (int) (sh * 0.92f) : ViewGroup.LayoutParams.WRAP_CONTENT);
+            w.setLayout(Math.min(dp(c, maxWidthDp), (int) (sw * 0.92f)),
+                    fullHeight ? (int) (sh * 0.94f) : ViewGroup.LayoutParams.WRAP_CONTENT);
             w.setGravity(Gravity.CENTER);
         }
         return d;
@@ -68,18 +74,17 @@ final class Ui {
         TextView t = new TextView(c);
         t.setText(s);
         t.setTextColor(TEXT);
-        t.setTextSize(18);
-        t.setTypeface(t.getTypeface(), android.graphics.Typeface.BOLD);
+        t.setTextSize(24);
         t.setPadding(0, 0, 0, dp(c, 8));
         return t;
     }
 
     static TextView section(Context c, String s) {
         TextView t = new TextView(c);
-        t.setText(s.toUpperCase());
+        t.setText(s);
         t.setTextColor(ACCENT);
-        t.setTextSize(12);
-        t.setTypeface(t.getTypeface(), android.graphics.Typeface.BOLD);
+        t.setTextSize(13);
+        t.setTypeface(t.getTypeface(), Typeface.BOLD);
         t.setPadding(0, dp(c, 14), 0, dp(c, 4));
         return t;
     }
@@ -88,30 +93,44 @@ final class Ui {
         TextView t = new TextView(c);
         t.setText(s);
         t.setTextColor(MUTED);
-        t.setTextSize(13);
+        t.setTextSize(14);
         t.setPadding(0, dp(c, 8), 0, dp(c, 2));
         return t;
     }
 
     static Button button(Context c, String s, boolean primary, View.OnClickListener l) {
+        return button(c, s, primary ? Color.WHITE : TEXT, l);
+    }
+
+    /** The dark-orange rounded button used everywhere in the editor. */
+    static Button button(Context c, String s, int textColor, View.OnClickListener l) {
         Button b = new Button(c);
         b.setText(s);
         b.setAllCaps(false);
-        b.setTextColor(primary ? Color.WHITE : TEXT);
-        b.setBackground(round(primary ? ACCENT : CARD, 12, c));
+        b.setTextColor(textColor);
+        b.setTypeface(b.getTypeface(), Typeface.BOLD);
+        b.setBackground(round(BTN, 16, c));
+        b.setStateListAnimator(null);
         b.setOnClickListener(l);
-        b.setPadding(dp(c, 14), 0, dp(c, 14), 0);
+        b.setPadding(dp(c, 10), 0, dp(c, 10), 0);
         return b;
     }
 
-    static Switch toggle(Context c, String s, boolean on, java.util.function.Consumer<Boolean> cb) {
-        Switch sw = new Switch(c);
-        sw.setText(s);
-        sw.setTextColor(TEXT);
-        sw.setChecked(on);
-        sw.setPadding(0, dp(c, 8), 0, dp(c, 8));
-        sw.setOnCheckedChangeListener((v, checked) -> cb.accept(checked));
-        return sw;
+    static CheckBox check(Context c, String s, boolean on, java.util.function.Consumer<Boolean> cb) {
+        CheckBox cb1 = new CheckBox(c);
+        cb1.setText(s);
+        cb1.setTextColor(TEXT);
+        cb1.setTextSize(17);
+        cb1.setChecked(on);
+        cb1.setButtonTintList(ColorStateList.valueOf(ACCENT));
+        cb1.setPadding(dp(c, 8), dp(c, 8), 0, dp(c, 8));
+        cb1.setOnCheckedChangeListener((v, checked) -> cb.accept(checked));
+        return cb1;
+    }
+
+    static void tintSeek(SeekBar s) {
+        s.setProgressTintList(ColorStateList.valueOf(ACCENT));
+        s.setThumbTintList(ColorStateList.valueOf(ACCENT));
     }
 
     static Spinner spinner(Context c, String[] items, int selected, java.util.function.IntConsumer cb) {
@@ -145,11 +164,33 @@ final class Ui {
         return sp;
     }
 
-    /** A labelled slider showing its value. */
-    static LinearLayout slider(Context c, String name, String unit, int min, int max, int value, java.util.function.IntConsumer cb) {
+    /** A left-aligned labelled slider that shows its value. */
+    static LinearLayout slider(Context c, String name, String unit, int min, int max, int value,
+                               java.util.function.IntConsumer cb) {
+        return slider(c, name, null, unit, min, max, value, false, cb);
+    }
+
+    /**
+     * A slider with an optional heading. {@code centered} gives the editor panel's look: a
+     * heading, a "Name: value" line, then the bar.
+     */
+    static LinearLayout slider(Context c, String name, String heading, String unit, int min, int max,
+                               int value, boolean centered, java.util.function.IntConsumer cb) {
         LinearLayout l = column(c);
+        if (heading != null) {
+            TextView h = new TextView(c);
+            h.setText(heading);
+            h.setTextColor(TEXT);
+            h.setTextSize(19);
+            h.setGravity(Gravity.CENTER_HORIZONTAL);
+            h.setPadding(0, dp(c, 14), 0, 0);
+            l.addView(h);
+        }
         TextView t = label(c, name + ": " + value + unit);
+        t.setTextSize(centered ? 16 : 14);
+        if (centered) t.setGravity(Gravity.CENTER_HORIZONTAL);
         SeekBar s = new SeekBar(c);
+        tintSeek(s);
         s.setMax(max - min);
         s.setProgress(value - min);
         s.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
