@@ -39,6 +39,14 @@ public final class HorizonInput {
     public static void setControlsAttached(boolean attached) {
         try { nativeSetControlsAttached(attached); } catch (UnsatisfiedLinkError ignored) {}
     }
+    /** True while a world is open; false on the launcher, title and loading screens. */
+    public static boolean isInGame() {
+        try { return nativeIsInGame(); } catch (UnsatisfiedLinkError e) { return false; }
+    }
+    /** Asks the engine to open its on-screen keyboard (chat). */
+    public static void requestKeyboard() {
+        try { nativeRequestKeyboard(); } catch (UnsatisfiedLinkError ignored) {}
+    }
     public static int cursorShape() {
         try { return nativeCursorShape(); } catch (UnsatisfiedLinkError e) { return 0; }
     }
@@ -53,5 +61,7 @@ public final class HorizonInput {
     private static native void nativeSetImeViewportBottomInset(int bottomInsetPx);
     private static native int nativeFps();
     private static native int nativeCursorShape();
+    private static native boolean nativeIsInGame();
+    private static native void nativeRequestKeyboard();
     private static native void nativeSetControlsAttached(boolean attached);
 }
